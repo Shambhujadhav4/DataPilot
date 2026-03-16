@@ -109,7 +109,7 @@ class DataVisualizer:
         if group_by:
             fig = px.box(df, x=group_by, y=column, title=f"{column} by {group_by}")
         else:
-            fig = px.box(df, y=column, title=f"Box Plot – {column}", boxmean=True)
+            fig = px.box(df, y=column, title=f"Box Plot – {column}")
         return fig
 
     @staticmethod

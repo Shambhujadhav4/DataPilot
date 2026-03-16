@@ -23,6 +23,36 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Accent and button tweaks only (safe for Streamlit)
+st.markdown(
+    """
+    <style>
+    .accent {
+        color: #fff;
+        background: linear-gradient(90deg, #1f77b4 60%, #43b0e5 100%);
+        border-radius: 8px;
+        padding: 0.5rem 1.2rem;
+        font-weight: 600;
+        margin-bottom: 1.2rem;
+        display: inline-block;
+    }
+    .stButton>button {
+        background: #1f77b4;
+        color: #fff;
+        border-radius: 6px;
+        padding: 0.4rem 1.2rem;
+        font-weight: 600;
+        border: none;
+        transition: background 0.2s;
+    }
+    .stButton>button:hover {
+        background: #43b0e5;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown(
     """
     <style>
@@ -63,26 +93,28 @@ PAGES = [
     "📊 Results & Visualizations",
 ]
 
-st.sidebar.markdown('<div class="big-title">🤖 ML Dashboard</div>', unsafe_allow_html=True)
-st.sidebar.markdown("---")
-
-page = st.sidebar.radio(
-    "Navigate to",
-    PAGES,
-    index=PAGES.index(st.session_state.current_page),
-)
-st.session_state.current_page = page
-
-# Status badges in sidebar
-if st.session_state.raw_data is not None:
-    st.sidebar.markdown("---")
-    raw = st.session_state.raw_data
-    st.sidebar.success(f"✅ Data: {raw.shape[0]:,} rows × {raw.shape[1]} cols")
-    if st.session_state.processed_data is not None:
-        proc = st.session_state.processed_data
-        st.sidebar.info(f"⚙️ Preprocessed: {proc.shape[0]:,} rows × {proc.shape[1]} cols")
-    if st.session_state.model_results is not None:
-        st.sidebar.success("🧠 Model trained!")
+with st.sidebar:
+    st.markdown('<div class="big-title">🤖 <span style="color:#1f77b4">ML Dashboard</span></div>', unsafe_allow_html=True)
+    st.markdown("<hr style='margin:0.5rem 0 1.2rem 0;'>", unsafe_allow_html=True)
+    page = st.radio(
+        "<b>Navigation</b>",
+        PAGES,
+        index=PAGES.index(st.session_state.current_page),
+        key="sidebar_nav",
+        format_func=lambda x: x,
+        help="Switch between steps of the ML workflow."
+    )
+    st.session_state.current_page = page
+    st.markdown("<hr style='margin:1.2rem 0 0.7rem 0;'>", unsafe_allow_html=True)
+    if st.session_state.raw_data is not None:
+        with st.expander("Status Overview", expanded=True):
+            raw = st.session_state.raw_data
+            st.markdown(f"📄 **✅ Data:** {raw.shape[0]:,} rows × {raw.shape[1]} cols")
+            if st.session_state.processed_data is not None:
+                proc = st.session_state.processed_data
+                st.markdown(f"🛠️ **⚙️ Preprocessed:** {proc.shape[0]:,} rows × {proc.shape[1]} cols")
+            if st.session_state.model_results is not None:
+                st.markdown("✅ **🧠 Model trained!**")
 
 # ──────────────────────────────────────────────────────────────────────
 # Helper
@@ -102,66 +134,65 @@ def _next_btn(label: str, target: str):
 # ======================================================================
 if page == "📤 Data Upload":
     st.markdown('<div class="big-title">📤 Data Upload</div>', unsafe_allow_html=True)
-
-    col_up, col_opt = st.columns([2, 1])
-    with col_up:
-        uploaded = st.file_uploader(
-            "Upload your CSV dataset", type=["csv"],
-            help="Supported format: comma-separated values (.csv)",
-        )
-    with col_opt:
-        st.markdown("**Parse options**")
-        sep = st.selectbox("Separator", [",", ";", "\\t", "|"], index=0)
-        enc = st.selectbox("Encoding", ["utf-8", "latin-1", "iso-8859-1"], index=0)
-        hdr = st.number_input("Header row", min_value=0, max_value=10, value=0)
-
-    if uploaded is not None:
-        try:
-            actual_sep = "\t" if sep == "\\t" else sep
-            df = pd.read_csv(uploaded, sep=actual_sep, encoding=enc, header=int(hdr))
-            st.session_state.raw_data = df
-            st.session_state.processed_data = df.copy()
-            st.session_state.preprocessing_log = []
-            st.session_state.model_trainer = None
-            st.session_state.model_results = None
-            st.success(f"✅ Loaded **{uploaded.name}** — {df.shape[0]:,} rows × {df.shape[1]} cols")
-        except Exception as exc:
-            st.error(f"Could not read file: {exc}")
-
-    if st.session_state.raw_data is not None:
-        df = st.session_state.raw_data
-
-        # Quick stats
-        st.markdown('<div class="sec-header">Dataset Overview</div>', unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Rows", f"{df.shape[0]:,}")
-        c2.metric("Columns", df.shape[1])
-        c3.metric("Missing values", int(df.isnull().sum().sum()))
-        c4.metric("Duplicate rows", int(df.duplicated().sum()))
-
-        st.markdown("**Preview**")
-        max_preview_rows = max(1, min(200, len(df)))
-        default_preview_rows = min(10, max_preview_rows)
-        n = st.slider("Rows to display", 1, max_preview_rows, default_preview_rows)
-        st.dataframe(df.head(n), use_container_width=True)
-
-        st.markdown("**Column info**")
-        col_info = pd.DataFrame(
-            {
-                "Column": df.columns,
-                "Type": df.dtypes.values,
-                "Non-null": df.count().values,
-                "Null": df.isnull().sum().values,
-                "Unique": df.nunique().values,
-            }
-        )
-        st.dataframe(col_info, use_container_width=True)
-
-        st.markdown("**Descriptive statistics**")
-        st.dataframe(df.describe(include="all"), use_container_width=True)
-
-        st.markdown("---")
-        _next_btn("➡️ Explore Data", "🔍 Data Exploration")
+    with st.container():
+        st.markdown('<div class="accent">Step 1: Upload your CSV dataset</div>', unsafe_allow_html=True)
+        with st.expander("Upload & Parse Options", expanded=True):
+            col_up, col_opt = st.columns([2, 1], gap="large")
+            with col_up:
+                uploaded = st.file_uploader(
+                    "Upload CSV",
+                    type=["csv"],
+                    help="Supported format: comma-separated values (.csv)"
+                )
+            with col_opt:
+                st.markdown("**Parse options**")
+                sep = st.selectbox("Separator", [",", ";", "\\t", "|"], index=0, help="Choose the column separator.")
+                enc = st.selectbox("Encoding", ["utf-8", "latin-1", "iso-8859-1"], index=0, help="File encoding.")
+                hdr = st.number_input("Header row", min_value=0, max_value=10, value=0, help="Row number for column headers.")
+        st.markdown("<br>", unsafe_allow_html=True)
+        if uploaded is not None:
+            with st.spinner("Reading file..."):
+                try:
+                    actual_sep = "\t" if sep == "\\t" else sep
+                    df = pd.read_csv(uploaded, sep=actual_sep, encoding=enc, header=int(hdr))
+                    st.session_state.raw_data = df
+                    st.session_state.processed_data = df.copy()
+                    st.session_state.preprocessing_log = []
+                    st.session_state.model_trainer = None
+                    st.session_state.model_results = None
+                    st.success(f"✅ Loaded **{uploaded.name}** — {df.shape[0]:,} rows × {df.shape[1]} cols")
+                except Exception as exc:
+                    st.error(f"Could not read file: {exc}")
+        if st.session_state.raw_data is not None:
+            df = st.session_state.raw_data
+            st.markdown('<div class="accent">Step 2: Quick Dataset Overview</div>', unsafe_allow_html=True)
+            with st.container():
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Rows", f"{df.shape[0]:,}")
+                c2.metric("Columns", df.shape[1])
+                c3.metric("Missing values", int(df.isnull().sum().sum()))
+                c4.metric("Duplicate rows", int(df.duplicated().sum()))
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("Preview Data", expanded=True):
+                max_preview_rows = max(1, min(200, len(df)))
+                default_preview_rows = min(10, max_preview_rows)
+                n = st.slider("Rows to display", 1, max_preview_rows, default_preview_rows)
+                st.dataframe(df.head(n), use_container_width=True)
+            with st.expander("Column Info", expanded=False):
+                col_info = pd.DataFrame(
+                    {
+                        "Column": df.columns,
+                        "Type": df.dtypes.values,
+                        "Non-null": df.count().values,
+                        "Null": df.isnull().sum().values,
+                        "Unique": df.nunique().values,
+                    }
+                )
+                st.dataframe(col_info, use_container_width=True)
+            with st.expander("Descriptive Statistics", expanded=False):
+                st.dataframe(df.describe(include="all"), use_container_width=True)
+            st.markdown("---")
+            _next_btn("➡️ Explore Data", "🔍 Data Exploration")
 
 
 # ======================================================================
@@ -652,7 +683,13 @@ elif page == "📊 Results & Visualizations":
         with tab_feat:
             importance = trainer.get_feature_importance()
             if importance is not None:
-                top_n = st.slider("Top N features to display", 5, min(50, len(importance)), min(20, len(importance)))
+                min_n = 1
+                max_n = max(min(50, len(importance)), min_n + 1)
+                default_n = min(20, max_n)
+                if max_n > min_n:
+                    top_n = st.slider("Top N features to display", min_n, max_n, default_n)
+                else:
+                    top_n = min_n
                 st.plotly_chart(
                     viz.plot_feature_importance(importance, top_n),
                     use_container_width=True,
