@@ -93,7 +93,14 @@ class DataVisualizer:
         if color_col:
             kwargs["color"] = color_col
         else:
-            kwargs["trendline"] = "ols"
+            try:
+                import statsmodels.api as sm  # noqa: F401
+            except Exception:
+                # Plotly's OLS trendline depends on statsmodels, so keep the
+                # chart usable when that dependency is unavailable or broken.
+                pass
+            else:
+                kwargs["trendline"] = "ols"
         fig = px.scatter(df, **kwargs)
         return fig
 

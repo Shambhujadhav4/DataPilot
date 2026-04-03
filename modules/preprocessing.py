@@ -101,8 +101,17 @@ class DataPreprocessor:
 
         if method == "label":
             for col in columns:
+                non_null_mask = self.df[col].notna()
+                if not non_null_mask.any():
+                    self.df[col] = pd.Series(np.nan, index=self.df.index, dtype="float64")
+                    continue
+
                 le = LabelEncoder()
-                self.df[col] = le.fit_transform(self.df[col].astype(str))
+                encoded = pd.Series(np.nan, index=self.df.index, dtype="float64")
+                encoded.loc[non_null_mask] = le.fit_transform(
+                    self.df.loc[non_null_mask, col].astype(str)
+                )
+                self.df[col] = encoded
                 self.label_encoders[col] = le
 
         elif method == "onehot":

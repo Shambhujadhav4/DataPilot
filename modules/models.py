@@ -70,12 +70,38 @@ class ModelTrainer:
         feature_cols: list,
         test_size: float = 0.2,
         random_state: int = 42,
+        task_type: str | None = None,
     ):
         X = df[feature_cols]
         y = df[target_col]
         self.feature_names = feature_cols
+        stratify = None
+        if task_type == "classification" and y.nunique(dropna=False) > 1:
+            class_counts = y.value_counts(dropna=False)
+            if class_counts.min() < 2:
+                raise ValueError(
+                    "Each target class needs at least 2 rows for stratified splitting."
+                )
+
+            test_count = (
+                int(np.ceil(len(y) * test_size))
+                if isinstance(test_size, float)
+                else int(test_size)
+            )
+            train_count = len(y) - test_count
+            n_classes = y.nunique(dropna=False)
+            if test_count < n_classes or train_count < n_classes:
+                raise ValueError(
+                    "Adjust the test split so both train and test sets can include every target class."
+                )
+
+            stratify = y
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
+            X,
+            y,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=stratify,
         )
         return self.X_train, self.X_test, self.y_train, self.y_test
 

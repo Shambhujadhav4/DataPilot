@@ -76,6 +76,7 @@ _DEFAULTS = {
     "target_column": None,
     "feature_columns": [],
     "task_type": None,
+    "trained_task_type": None,
     "current_page": "📤 Data Upload",
 }
 for _k, _v in _DEFAULTS.items():
@@ -124,6 +125,14 @@ def _go(target: str):
     st.rerun()
 
 
+def _clear_model_state():
+    st.session_state.model_trainer = None
+    st.session_state.model_results = None
+    st.session_state.trained_task_type = None
+    st.session_state.target_column = None
+    st.session_state.feature_columns = []
+
+
 def _next_btn(label: str, target: str):
     if st.button(label, use_container_width=True):
         _go(target)
@@ -158,8 +167,7 @@ if page == "📤 Data Upload":
                     st.session_state.raw_data = df
                     st.session_state.processed_data = df.copy()
                     st.session_state.preprocessing_log = []
-                    st.session_state.model_trainer = None
-                    st.session_state.model_results = None
+                    _clear_model_state()
                     st.success(f"✅ Loaded **{uploaded.name}** — {df.shape[0]:,} rows × {df.shape[1]} cols")
                 except Exception as exc:
                     st.error(f"Could not read file: {exc}")
@@ -317,6 +325,7 @@ elif page == "⚙️ Preprocessing":
             if st.button("🔄 Reset to Original"):
                 st.session_state.processed_data = st.session_state.raw_data.copy()
                 st.session_state.preprocessing_log = []
+                _clear_model_state()
                 st.success("Data reset to original!")
                 st.rerun()
 
@@ -335,6 +344,7 @@ elif page == "⚙️ Preprocessing":
                     p = DataPreprocessor(st.session_state.processed_data)
                     st.session_state.processed_data = p.drop_columns(to_drop)
                     st.session_state.preprocessing_log.append(f"Dropped columns: {to_drop}")
+                    _clear_model_state()
                     st.success(f"Dropped {len(to_drop)} column(s).")
                     st.rerun()
                 else:
@@ -381,6 +391,7 @@ elif page == "⚙️ Preprocessing":
                 p = DataPreprocessor(st.session_state.processed_data)
                 cols = apply_to if apply_to else None
                 st.session_state.processed_data = p.handle_missing_values(strategy, cols, fill_val)
+                _clear_model_state()
                 st.session_state.preprocessing_log.append(
                     f"Missing values → {strategy} on {cols or 'all columns'}"
                 )
@@ -409,6 +420,7 @@ elif page == "⚙️ Preprocessing":
                     p = DataPreprocessor(st.session_state.processed_data)
                     cols = enc_cols if enc_cols else None
                     st.session_state.processed_data = p.encode_categorical(enc_method, cols)
+                    _clear_model_state()
                     st.session_state.preprocessing_log.append(
                         f"Encoding → {enc_method} on {cols or 'all categorical'}"
                     )
@@ -435,6 +447,7 @@ elif page == "⚙️ Preprocessing":
                 p = DataPreprocessor(st.session_state.processed_data)
                 cols = scale_cols if scale_cols else None
                 st.session_state.processed_data = p.scale_features(scale_method, cols)
+                _clear_model_state()
                 st.session_state.preprocessing_log.append(
                     f"Scaling → {scale_method} on {cols or 'all numeric'}"
                 )
@@ -468,6 +481,7 @@ elif page == "⚙️ Preprocessing":
                 p = DataPreprocessor(st.session_state.processed_data)
                 cols = out_cols if out_cols else None
                 st.session_state.processed_data = p.handle_outliers(out_method, cols, threshold)
+                _clear_model_state()
                 st.session_state.preprocessing_log.append(
                     f"Outliers → {out_method} on {cols or 'all numeric'}"
                 )
@@ -561,7 +575,14 @@ elif page == "🧠 Model Training":
                     with st.spinner("Training… please wait"):
                         try:
                             trainer = ModelTrainer()
-                            trainer.prepare_data(df, target_col, feature_cols, test_size, int(random_state))
+                            trainer.prepare_data(
+                                df,
+                                target_col,
+                                feature_cols,
+                                test_size,
+                                int(random_state),
+                                task_type,
+                            )
                             trainer.train(task_type, selected_model)
                             metrics = trainer.get_metrics()
                             if run_cv:
@@ -571,17 +592,28 @@ elif page == "🧠 Model Training":
                                     st.warning(f"CV failed: {cv_err}")
                             st.session_state.model_trainer = trainer
                             st.session_state.model_results = metrics
+                            st.session_state.trained_task_type = task_type
                             st.success("✅ Model trained successfully!")
                             st.balloons()
                         except Exception as exc:
                             st.error(f"Training failed: {exc}")
 
         # Quick result summary
-        if st.session_state.model_results:
+        trained_task = st.session_state.trained_task_type or getattr(
+            st.session_state.model_trainer,
+            "task_type",
+            None,
+        )
+        if st.session_state.model_results and trained_task:
             st.markdown('<div class="sec-header">Quick Results</div>', unsafe_allow_html=True)
             m = st.session_state.model_results
+            if trained_task != task_type:
+                st.info(
+                    f"Showing results for the last trained **{trained_task}** model. "
+                    "Click Train Model to refresh them for the current selection."
+                )
 
-            if task_type == "classification":
+            if trained_task == "classification":
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Accuracy", f"{m.get('accuracy', 0):.4f}")
                 c2.metric("F1-Score", f"{m.get('f1_score', 0):.4f}")
@@ -618,7 +650,7 @@ elif page == "📊 Results & Visualizations":
         m = st.session_state.model_results
         trainer: ModelTrainer = st.session_state.model_trainer
         viz = DataVisualizer()
-        task = st.session_state.task_type
+        task = st.session_state.trained_task_type or getattr(trainer, "task_type", None)
 
         tab_met, tab_plots, tab_feat, tab_cv = st.tabs(
             ["📈 Metrics", "🎯 Model Plots", "🔍 Feature Importance", "🔁 Cross-Validation"]
